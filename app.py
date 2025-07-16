@@ -104,5 +104,4 @@ def baixar_excel():
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-if __name__ == "__main__":
-    app.run(debug=True)
+app = app
