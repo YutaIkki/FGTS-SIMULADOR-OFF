@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;700&display=swap" rel="stylesheet">
+    <title>🚀 FGTS - FACTA OFFLINE</title>
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: #f4f4f4;
+            padding: 30px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: auto;
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: green;
+        }
+
+        textarea,
+        input,
+        button {
+            width: 100%;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+
+        textarea {
+            height: 200px;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            resize: vertical;
+        }
+
+        input[type="number"] {
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+        }
+
+        button {
+            background: green;
+            color: white;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            background: darkgreen;
+        }
+
+        .result {
+            margin-top: 20px;
+            white-space: pre-wrap;
+            background: #f1f1f1;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+            <img src="/static/logo.png" alt="Logo" style="height: 150px;">
+            <h1 style="color: green; font-weight: 700; font-size: 45px; margin: 0 auto; text-align: center; flex: 1; padding-right: 95px; font-family: Trebuchet MS;">
+                FGTS FACTA OFFLINE
+            </h1>
+        </div>
+        <label for="cpfs">CPFs:</label>
+        <textarea id="cpfs" placeholder="Ex:&#10;12345678901&#10;98765432100"></textarea>
+
+        <label for="tentativas">teimosinha:</label>
+        <input type="number" id="tentativas" value="1" min="1" max="15">
+
+        <button onclick="consultar()">Consultar</button>
+        <button onclick="baixarExcel()" style="background: #555;">📥 Baixar Excel</button>
+        <button onclick="limparCampos()" style="background: #999;">🧹 Limpar</button>
+
+        <div style="margin-top: 20px;">
+            <div style="height: 20px; background: #ccc; border-radius: 10px; overflow: hidden;">
+                <div id="progressBar" style="width: 0%; height: 100%; background: green;"></div>
+            </div>
+            <p id="progressText" style="text-align: right; font-size: 14px;">0%</p>
+        </div>
+
+        <div id="result" class="result"></div>
+    </div>
+
+    <script>
+        let resultadosGerais = [];
+
+        async function consultar() {
+            const cpfs = document.getElementById("cpfs").value
+                .split("\n")
+                .map(c => c.trim().padStart(11, "0"))
+                .filter(c => c !== "");
+
+            const tentativas = parseInt(document.getElementById("tentativas").value || 1);
+            const resultado = document.getElementById("result");
+            const progressBar = document.getElementById("progressBar");
+            const progressText = document.getElementById("progressText");
+
+            const loteParalelo = 10;
+            let concluídos = 0;
+            resultadosGerais = [];
+
+            progressBar.style.width = "0%";
+            progressText.innerText = "0%";
+            resultado.innerHTML = "Iniciando consultas...<br><br>";
+
+            async function consultarCpf(cpf) {
+                try {
+                    const res = await fetch("/consultar", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ cpfs: [cpf], tentativas })
+                    });
+
+                    const dados = await res.json();
+                    const r = dados[0];
+                    resultadosGerais.push(r);
+                    resultado.innerHTML += `CPF: ${r.CPF}<br>Status: <strong>${r.Resultado}</strong><br><br>`;
+                } catch (e) {
+                    resultadosGerais.push({ CPF: cpf, Resultado: "Erro" });
+                    resultado.innerHTML += `CPF: ${cpf}<br>Status: <strong>Erro</strong><br><br>`;
+                } finally {
+                    concluídos++;
+                    const progresso = Math.round((concluídos / cpfs.length) * 100);
+                    progressBar.style.width = `${progresso}%`;
+                    progressText.innerText = `${progresso}%`;
+                }
+            }
+
+            for (let i = 0; i < cpfs.length; i += loteParalelo) {
+                const lote = cpfs.slice(i, i + loteParalelo);
+                await Promise.all(lote.map(cpf => consultarCpf(cpf)));
+            }
+
+            resultado.innerHTML += `<br>✅ Consultas finalizadas.`;
+        }
+
+        async function baixarExcel() {
+            const res = await fetch("/baixar-excel", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ resultados: resultadosGerais })
+            });
+
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "resultado_consulta.xlsx";
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+        function limparCampos() {
+            document.getElementById("cpfs").value = "";
+            document.getElementById("tentativas").value = "1";
+            document.getElementById("result").innerHTML = "";
+            document.getElementById("progressBar").style.width = "0%";
+            document.getElementById("progressText").innerText = "0%";
+            resultadosGerais = [];
+        }
+    </script>
+
+</body>
+
+</html>
