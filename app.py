@@ -4,6 +4,9 @@ import pandas as pd
 import io
 import re
 import time
+import sqlite3
+from datetime import datetime
+import os
 
 app = Flask(__name__)
 
@@ -24,6 +27,22 @@ def gerar_token():
     )
     data = response.json()
     return data.get("token")
+
+def init_db():
+    conn = sqlite3.connect("consultas.db")
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS consultas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cpf TEXT,
+            resultado TEXT,
+            data TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db()
 
 @app.route("/")
 def index():
@@ -87,7 +106,46 @@ def consultar():
 
         resultados.append(resultado_final)
 
+        conn = sqlite3.connect("consultas.db")
+        c = conn.cursor()
+        c.execute("INSERT INTO consultas (cpf, resultado, data) VALUES (?, ?, ?)", (
+            resultado_final["CPF"],
+            resultado_final["Resultado"],
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ))
+        conn.commit()
+        conn.close()
+
     return jsonify(resultados)
+
+@app.route("/recuperar-consultas", methods=["GET"])
+def recuperar_consultas():
+    conn = sqlite3.connect("consultas.db")
+    c = conn.cursor()
+    c.execute("SELECT cpf, resultado, data FROM consultas ORDER BY id DESC LIMIT 100")
+    dados = [{"CPF": row[0], "Resultado": row[1], "Data": row[2]} for row in c.fetchall()]
+    conn.close()
+    return jsonify(dados)
+
+os.makedirs("recuperacoes", exist_ok=True)
+
+@app.route("/baixar-recuperadas", methods=["GET"])
+def baixar_recuperadas():
+    conn = sqlite3.connect("consultas.db")
+    c = conn.cursor()
+    c.execute("SELECT cpf, resultado, data FROM consultas ORDER BY id DESC LIMIT 100")
+    rows = c.fetchall()
+    conn.close()
+
+    df = pd.DataFrame(rows, columns=["CPF", "Resultado", "Data"])
+    from datetime import datetime
+
+    data_agora = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    nome_arquivo = f"ultimas_consultas_{data_agora}.xlsx"
+    caminho = os.path.join("recuperacoes", nome_arquivo)
+
+    df.to_excel(caminho, index=False)
+    return send_file(caminho, as_attachment=True)
 
 @app.route("/baixar-excel", methods=["POST"])
 def baixar_excel():
